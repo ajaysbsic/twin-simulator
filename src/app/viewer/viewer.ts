@@ -135,7 +135,7 @@ export class ViewerComponent implements AfterViewInit {
   loadSTL(model: any, index: number) {
     if (!this.isStlMode) return;
 
-    this.loader.load(model.file, (geometry) => {
+    this.loader.load(this.getModelFileUrl(model.file), (geometry) => {
       geometry.center();
 
       const material = new THREE.MeshStandardMaterial({ color: 0xbdbdbd });
@@ -369,5 +369,18 @@ export class ViewerComponent implements AfterViewInit {
   private getDefaultFinalPosition(index: number): number[] {
     const yPositions = [-2, -1.2, -1.1, -0.1, 0.2];
     return [0, yPositions[index] ?? -2 + index * 0.7, 0];
+  }
+
+  private getModelFileUrl(file: string): string {
+    if (!file) return file;
+
+    const legacyAssetPath = /^\/?assets\/models\//;
+    const normalizedFile = file.replace(legacyAssetPath, 'models/');
+
+    if (/^(https?:|data:|blob:|\/)/.test(normalizedFile)) {
+      return normalizedFile;
+    }
+
+    return `/${normalizedFile}`;
   }
 }
