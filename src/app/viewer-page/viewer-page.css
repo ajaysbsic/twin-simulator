@@ -1,0 +1,96 @@
+.layout {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+  color: #f8fbff;
+  background:
+    radial-gradient(circle at 8% 8%, rgba(45, 212, 191, 0.22), transparent 28%),
+    radial-gradient(circle at 92% 12%, rgba(244, 114, 182, 0.18), transparent 28%),
+    linear-gradient(135deg, #050816, #101827 50%, #21122f);
+}
+
+.sidebar {
+  width: 380px;
+  padding: 24px;
+  box-sizing: border-box;
+  overflow-y: auto;
+  border-right: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(24px);
+  box-shadow: 18px 0 70px rgba(0, 0, 0, 0.28);
+}
+
+.project-summary {
+  margin-bottom: 24px;
+  padding: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 20px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.13), rgba(255, 255, 255, 0.06));
+}
+
+.project-summary span,
+.viewer-topbar span {
+  color: #67e8f9;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.project-summary h2 {
+  margin: 8px 0;
+  font-size: 28px;
+}
+
+.project-summary p {
+  margin: 0;
+  color: rgba(248, 251, 255, 0.62);
+  line-height: 1.55;
+}
+
+.viewer-area {
+  flex: 1;
+  position: relative;
+  min-width: 0;
+}
+
+.viewer-topbar {
+  position: absolute;
+  z-index: 2;
+  top: 22px;
+  left: 22px;
+  right: 22px;
+  display: flex;
+  justify-content: space-between;
+  pointer-events: none;
+}
+
+.viewer-topbar > div {
+  padding: 14px 18px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 16px;
+  background: rgba(2, 6, 23, 0.42);
+  backdrop-filter: blur(18px);
+}
+
+.viewer-topbar strong {
+  display: block;
+  margin-top: 4px;
+  font-size: 18px;
+}
+
+@media (max-width: 900px) {
+  .layout {
+    flex-direction: column;
+    overflow: auto;
+  }
+
+  .sidebar {
+    width: 100%;
+    max-height: 45vh;
+  }
+
+  .viewer-area {
+    min-height: 65vh;
+  }
+}

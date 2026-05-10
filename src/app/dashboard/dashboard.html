@@ -1,0 +1,92 @@
+<main class="dashboard">
+  <section class="hero">
+    <div class="hero-copy">
+      <div class="eyebrow">Digital assembly training</div>
+      <h1>Digital Twin Studio</h1>
+      <p>
+        Build premium STL assembly simulations from project JSON, validate part order,
+        and train with interactive 3D placement.
+      </p>
+    </div>
+
+    <div class="hero-actions">
+      <button class="primary-action" (click)="openCreateDialog()">Create Project</button>
+      <a class="ghost-action" href="#projects">View Projects</a>
+    </div>
+  </section>
+
+  <section id="projects" class="projects-section">
+    <div class="section-heading">
+      <div>
+        <span>Project Library</span>
+        <h2>Available simulations</h2>
+      </div>
+      <button class="secondary-action" (click)="openCreateDialog()">New Project</button>
+    </div>
+
+    <div class="projects-grid">
+      <article class="project-card" *ngFor="let project of projects">
+        <div class="card-top">
+          <div class="project-mark">{{ project.name.charAt(0) }}</div>
+          <div>
+            <h3>{{ project.name }}</h3>
+            <p>{{ project.description || 'STL assembly simulator' }}</p>
+          </div>
+        </div>
+
+        <div class="project-meta">
+          <span>{{ project.models.length }} STL parts</span>
+          <span>{{ project.models[0]?.id || 'No parts' }}</span>
+        </div>
+
+        <div class="actions">
+          <button class="primary-action small" (click)="openProject(project)">Open</button>
+          <button class="ghost-action small" (click)="openEditDialog(project)">Edit</button>
+          <button class="danger-action small" (click)="deleteProject(project.id)">Delete</button>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <div class="dialog-backdrop" *ngIf="showProjectDialog">
+    <section class="project-dialog">
+      <div class="dialog-header">
+        <div>
+          <span>{{ editingProject ? 'Edit simulation' : 'Create simulation' }}</span>
+          <h2>{{ editingProject ? 'Update project config' : 'Upload project JSON' }}</h2>
+        </div>
+        <button class="icon-button" (click)="closeProjectDialog()">x</button>
+      </div>
+
+      <label>
+        Project name
+        <input [(ngModel)]="projectName" placeholder="Assembly Simulator" />
+      </label>
+
+      <label>
+        Description
+        <input [(ngModel)]="projectDescription" placeholder="Training simulator for STL parts" />
+      </label>
+
+      <label class="upload-zone">
+        <input type="file" accept=".json,application/json" (change)="onConfigSelected($event)" />
+        <strong>{{ configFileName || 'Choose stl-project-config.json' }}</strong>
+        <span>JSON should include a models array with file, initialPosition, targetPosition, and scale.</span>
+      </label>
+
+      <label>
+        Config preview
+        <textarea [(ngModel)]="configText" placeholder="{ &quot;models&quot;: [] }"></textarea>
+      </label>
+
+      <p class="dialog-error" *ngIf="dialogError">{{ dialogError }}</p>
+
+      <div class="dialog-actions">
+        <button class="ghost-action" (click)="closeProjectDialog()">Cancel</button>
+        <button class="primary-action" (click)="saveProjectFromDialog()">
+          {{ editingProject ? 'Save Changes' : 'Create Project' }}
+        </button>
+      </div>
+    </section>
+  </div>
+</main>

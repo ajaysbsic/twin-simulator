@@ -1,0 +1,31 @@
+<div class="panel">
+  <div class="panel-header">
+    <span>Assembly Sequence</span>
+    <h1 class="title">Twin Simulator</h1>
+    <p class="subtitle">Select each STL part in order and assemble the stack.</p>
+  </div>
+
+  <div class="steps-container">
+    <button
+      class="step-card"
+      *ngFor="let step of steps; let i = index"
+      [class.completed]="isStepCompleted(i)"
+      [class.current]="isCurrentStep(i)"
+      (click)="executeStep(i)"
+    >
+      <div class="step-index">
+        {{ step.step }}
+      </div>
+
+      <div>
+        <div class="step-number">
+          Step {{ step.step }}
+        </div>
+
+        <div class="step-name">
+          {{ step.componentId }}
+        </div>
+      </div>
+    </button>
+  </div>
+</div>

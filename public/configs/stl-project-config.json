@@ -1,0 +1,43 @@
+{
+  "models": [
+    {
+      "id": "part-1",
+      "file": "assets/models/1.stl",
+      "initialPosition": [-6, 2, 0],
+      "targetPosition": [0, -2.0, 0],
+      "scale": 0.006
+    },
+
+    {
+      "id": "part-2",
+      "file": "assets/models/2.stl",
+      "initialPosition": [-3, 2, 0],
+      "targetPosition": [0, -1.2, 0],
+      "scale": 0.006
+    },
+
+    {
+      "id": "part-3",
+      "file": "assets/models/3.stl",
+      "initialPosition": [0, 2, 0],
+      "targetPosition": [0, -1.1, 0],
+      "scale": 0.006
+    },
+
+    {
+      "id": "part-4",
+      "file": "assets/models/4.stl",
+      "initialPosition": [3, 2, 0],
+      "targetPosition": [0, -0.1, 0],
+      "scale": 0.006
+    },
+
+    {
+      "id": "part-5",
+      "file": "assets/models/5.stl",
+      "initialPosition": [6, 2, 0],
+      "targetPosition": [0, 0.2, 0],
+      "scale": 0.006
+    }
+  ]
+}

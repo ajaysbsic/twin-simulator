@@ -42,3 +42,34 @@ __screenshots__/
 # System files
 .DS_Store
 Thumbs.db
+
+# Additional ignores
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+logs
+*.log
+*.pid
+*.seed
+*.pid.lock
+.nyc_output
+jspm_packages/
+.npm
+.node_repl_history
+*.tgz
+.yarn-integrity
+.cache
+.parcel-cache
+.next
+.nuxt
+.vuepress/dist
+.serverless
+.fusebox/
+.dynamodb/
+.tern-port
+.vscode-test
+.angular/
+tmp/
+temp/

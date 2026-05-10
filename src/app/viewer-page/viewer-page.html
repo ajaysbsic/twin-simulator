@@ -1,0 +1,31 @@
+<div class="layout">
+
+  <div class="sidebar">
+    <div class="project-summary">
+      <span>Active Project</span>
+      <h2>{{ project.name }}</h2>
+      <p>{{ project.description || 'Interactive STL assembly simulation' }}</p>
+    </div>
+
+    <app-home
+      [project]="project"
+      (stepExecuted)="onStep($event)">
+    </app-home>
+  </div>
+
+  <div class="viewer-area">
+    <div class="viewer-topbar">
+      <div>
+        <span>3D Assembly Workspace</span>
+        <strong>{{ project.models.length }} parts loaded</strong>
+      </div>
+    </div>
+
+    <app-viewer
+      [project]="project"
+      (meshClicked)="onMeshClick($event)"
+      (componentAssembled)="onComponentAssembled($event)">
+    </app-viewer>
+  </div>
+
+</div>

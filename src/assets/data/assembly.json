@@ -1,0 +1,14 @@
+{
+  "id": "simple_device",
+  "name": "Simple Device",
+  "components": [
+    { "id": "base", "name": "Base" },
+    { "id": "motor", "name": "Motor", "dependencies": ["base"] },
+    { "id": "cover", "name": "Cover", "dependencies": ["motor"] }
+  ],
+  "steps": [
+    { "step": 1, "action": "attach", "componentId": "base" },
+    { "step": 2, "action": "attach", "componentId": "motor" },
+    { "step": 3, "action": "attach", "componentId": "cover" }
+  ]
+}
