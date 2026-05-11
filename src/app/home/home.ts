@@ -28,6 +28,15 @@ export class HomeComponent {
   lastResult: 'success' | 'error' | null = null;
 
   ngOnInit() {
+    this.initializeAssembly();
+  }
+
+  resetProgress() {
+    this.lastResult = null;
+    this.initializeAssembly();
+  }
+
+  private initializeAssembly() {
 
   // -----------------------------
   // STL PROJECT MODE
@@ -131,7 +140,7 @@ export class HomeComponent {
     this.engine =
       new SimulationEngine(cubeAssembly as any);
   }
-}
+  }
 
   executeStep(i: number) {
     const step = this.steps[i];
@@ -150,6 +159,18 @@ export class HomeComponent {
 
     if (step?.componentId === componentId) {
       this.engine.complete(stepIndex);
+    }
+  }
+
+  undoStep(componentId: string) {
+    const stepIndex = this.steps.findIndex(step => step.componentId === componentId);
+
+    if (stepIndex === -1) return;
+
+    this.initializeAssembly();
+
+    for (let i = 0; i < stepIndex; i++) {
+      this.engine.complete(i);
     }
   }
 

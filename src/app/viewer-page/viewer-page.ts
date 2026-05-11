@@ -18,6 +18,8 @@ import { ProjectService } from '../services/project.service';
 export class ViewerPageComponent {
 
   projectId!: string;
+  activeViewerMode: 'guided' | 'drag-drop' = 'guided';
+
   constructor(
     private projectService: ProjectService,
     private route: ActivatedRoute) {}
@@ -42,6 +44,8 @@ export class ViewerPageComponent {
     componentId: string;
   }) {
 
+    if (this.activeViewerMode === 'drag-drop') return;
+
     if (!this.viewer) return;
 
     if (event.success) {
@@ -56,6 +60,7 @@ export class ViewerPageComponent {
   }
 
   onMeshClick(componentId: string) {
+    if (this.activeViewerMode === 'drag-drop') return;
 
     const stepIndex =
       this.home.steps.findIndex(
@@ -69,5 +74,32 @@ export class ViewerPageComponent {
 
   onComponentAssembled(componentId: string) {
     this.home.completeStep(componentId);
+  }
+
+  onComponentDisassembled(componentId: string) {
+    if (this.activeViewerMode !== 'drag-drop') return;
+
+    this.home.undoStep(componentId);
+  }
+
+  get canUndoDragDrop(): boolean {
+    return this.activeViewerMode === 'drag-drop' && !!this.viewer?.canUndoLastAssembly();
+  }
+
+  undoLastAssembly() {
+    if (this.activeViewerMode !== 'drag-drop') return;
+
+    const componentId = this.viewer?.undoLastAssembly();
+
+    if (componentId) {
+      this.home.undoStep(componentId);
+    }
+  }
+
+  setViewerMode(mode: 'guided' | 'drag-drop') {
+    if (this.activeViewerMode === mode) return;
+
+    this.activeViewerMode = mode;
+    this.home?.resetProgress();
   }
 }

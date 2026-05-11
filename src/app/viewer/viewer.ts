@@ -1,12 +1,14 @@
 import {
   Component, ElementRef, EventEmitter, ViewChild,
-  AfterViewInit, Inject, PLATFORM_ID, Output, Input
+  AfterViewInit, Inject, PLATFORM_ID, Output, Input,
+  OnDestroy, SimpleChanges
 } from '@angular/core';
 
 import { isPlatformBrowser } from '@angular/common';
 import * as THREE from 'three';
 import { ProjectModel } from '../models/project.model';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
+import { DragControls } from 'three/examples/jsm/controls/DragControls.js';
 
 @Component({
   selector: 'app-viewer',
@@ -14,11 +16,13 @@ import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
   templateUrl: './viewer.html',
   styleUrl: './viewer.css',
 })
-export class ViewerComponent implements AfterViewInit {
+export class ViewerComponent implements AfterViewInit, OnDestroy {
 
   @Input() project!: ProjectModel;
+  @Input() interactionMode: 'guided' | 'drag-drop' = 'guided';
   @Output() meshClicked = new EventEmitter<string>();
   @Output() componentAssembled = new EventEmitter<string>();
+  @Output() componentDisassembled = new EventEmitter<string>();
   @ViewChild('canvas') canvasRef!: ElementRef;
 
   isStlMode = false;
@@ -27,6 +31,7 @@ export class ViewerComponent implements AfterViewInit {
   scene!: THREE.Scene;
   camera!: THREE.PerspectiveCamera;
   renderer!: THREE.WebGLRenderer;
+  dragControls!: DragControls;
 
   meshMap: { [key: string]: THREE.Mesh } = {};
   slotMap: { [key: string]: THREE.Mesh } = {};
@@ -38,6 +43,16 @@ export class ViewerComponent implements AfterViewInit {
   private stlReady = false;
   private currentStep = 0;
   private movingComponentId: string | null = null;
+  private viewReady = false;
+  private snapThreshold = 0.85;
+  private targetGhosts: THREE.Mesh[] = [];
+  private readonly assemblyTargets: { [key: string]: THREE.Vector3 } = {
+    'part-1': new THREE.Vector3(3, -3, 0),
+    'part-2': new THREE.Vector3(3, -2.2, 0),
+    'part-3': new THREE.Vector3(3, -2.0, 0),
+    'part-4': new THREE.Vector3(3, -1.2, 0),
+    'part-5': new THREE.Vector3(3, -0.5, 0),
+  };
 
   raycaster = new THREE.Raycaster();
   mouse = new THREE.Vector2();
@@ -48,9 +63,16 @@ export class ViewerComponent implements AfterViewInit {
     this.isBrowser = isPlatformBrowser(platformId);
   }
 
-  ngOnChanges() {
+  ngOnChanges(changes: SimpleChanges) {
     if (!this.project) return;
     this.isStlMode = this.project.models?.length > 0;
+
+    if (
+      this.viewReady &&
+      (changes['interactionMode'] || changes['project'])
+    ) {
+      this.resetScene();
+    }
   }
 
   ngAfterViewInit(): void {
@@ -62,6 +84,12 @@ export class ViewerComponent implements AfterViewInit {
 
     this.initScene();
     this.animate();
+    this.viewReady = true;
+  }
+
+  ngOnDestroy(): void {
+    this.disposeDragControls();
+    this.renderer?.dispose();
   }
 
   initScene() {
@@ -98,7 +126,7 @@ export class ViewerComponent implements AfterViewInit {
     requestAnimationFrame(() => this.animate());
 
     Object.values(this.meshMap).forEach(mesh => {
-      if (!mesh.userData['assembled'] && !mesh.userData['isMoving']) {
+      if (!mesh.userData['assembled'] && !mesh.userData['isMoving'] && !mesh.userData['isDragging']) {
         mesh.rotation.y += mesh.userData['rotationSpeed'] || 0.002;
       }
 
@@ -159,8 +187,13 @@ export class ViewerComponent implements AfterViewInit {
       mesh.userData['componentId'] = model.id;
       mesh.userData['assembled'] = false;
       mesh.userData['isMoving'] = false;
+      mesh.userData['isDragging'] = false;
+      mesh.userData['locked'] = false;
       mesh.userData['targetPosition'] = null;
       mesh.userData['finalPosition'] = model.targetPosition;
+      mesh.userData['originalPosition'] = mesh.position.clone();
+      mesh.userData['assembledPosition'] = null;
+      mesh.userData['dragRejectedOnStart'] = false;
       mesh.userData['rotationSpeed'] = 0.001 + Math.random() * 0.002;
 
       this.scene.add(mesh);
@@ -169,6 +202,10 @@ export class ViewerComponent implements AfterViewInit {
       this.stlLoadedCount++;
       if (this.stlLoadedCount === this.stlTotal) {
         this.stlReady = true;
+
+        if (this.isDragDropMode()) {
+          this.setupDragControls();
+        }
       }
     });
   }
@@ -179,6 +216,7 @@ export class ViewerComponent implements AfterViewInit {
     this.stlReady = false;
     this.currentStep = 0;
     this.movingComponentId = null;
+    this.createAssemblyTargetGhosts();
     this.project?.models?.forEach((m, i) => this.loadSTL(m, i));
   }
 
@@ -235,6 +273,7 @@ export class ViewerComponent implements AfterViewInit {
   }
 
   onCanvasClick(event: MouseEvent) {
+    if (this.isDragDropMode()) return;
     if (this.isStlMode && !this.stlReady) return;
     const rect = this.canvasRef.nativeElement.getBoundingClientRect();
 
@@ -256,6 +295,8 @@ export class ViewerComponent implements AfterViewInit {
   }
 
   attachComponent(componentId: string): boolean {
+    if (this.isDragDropMode()) return false;
+
     const mesh = this.meshMap[componentId];
     if (!mesh) return false;
 
@@ -369,6 +410,260 @@ export class ViewerComponent implements AfterViewInit {
   private getDefaultFinalPosition(index: number): number[] {
     const yPositions = [-2, -1.2, -1.1, -0.1, 0.2];
     return [0, yPositions[index] ?? -2 + index * 0.7, 0];
+  }
+
+  private isDragDropMode(): boolean {
+    return this.interactionMode === 'drag-drop' && this.isStlMode;
+  }
+
+  private setupDragControls() {
+    this.disposeDragControls();
+
+    this.dragControls = new DragControls(
+      Object.values(this.meshMap),
+      this.camera,
+      this.renderer.domElement
+    );
+
+    this.dragControls.addEventListener('dragstart', (event) => {
+      const mesh = event.object as THREE.Mesh;
+      const componentId = mesh.userData['componentId'];
+      const expectedModel = this.project.models[this.currentStep];
+      const canDrag =
+        mesh.userData['assembled'] ||
+        expectedModel?.id === componentId;
+
+      mesh.userData['isDragging'] = true;
+      mesh.userData['dragRejectedOnStart'] = !canDrag;
+      this.highlightTarget(componentId, canDrag);
+    });
+
+    this.dragControls.addEventListener('drag', (event) => {
+      const mesh = event.object as THREE.Mesh;
+      mesh.position.z = 0;
+    });
+
+    this.dragControls.addEventListener('dragend', (event) => {
+      const mesh = event.object as THREE.Mesh;
+      mesh.userData['isDragging'] = false;
+      mesh.position.z = 0;
+      this.clearTargetHighlights();
+      this.handleDragDrop(mesh);
+    });
+  }
+
+  private handleDragDrop(mesh: THREE.Mesh) {
+    const componentId = mesh.userData['componentId'];
+
+    if (mesh.userData['assembled'] || mesh.userData['locked']) {
+      this.handleAssembledPartDrop(mesh);
+      return;
+    }
+
+    const expectedModel = this.project.models[this.currentStep];
+    const target = this.getAssemblyTarget(componentId);
+    const isCorrectSequence =
+      !mesh.userData['dragRejectedOnStart'] &&
+      expectedModel?.id === componentId;
+    const isNearTarget =
+      !!target && mesh.position.distanceTo(target) < this.snapThreshold;
+
+    if (isCorrectSequence && isNearTarget && target) {
+      mesh.position.copy(target);
+      mesh.rotation.set(0, 0, 0);
+      mesh.userData['assembled'] = true;
+      mesh.userData['locked'] = true;
+      mesh.userData['isMoving'] = false;
+      mesh.userData['targetPosition'] = null;
+      mesh.userData['assembledPosition'] = target.clone();
+      this.currentStep++;
+      this.componentAssembled.emit(componentId);
+      return;
+    }
+
+    this.markError(componentId);
+    this.returnToOriginalPosition(mesh);
+  }
+
+  private handleAssembledPartDrop(mesh: THREE.Mesh) {
+    const componentId = mesh.userData['componentId'];
+    const assembledPosition = mesh.userData['assembledPosition'] as THREE.Vector3 | undefined;
+
+    if (!assembledPosition) {
+      this.returnToOriginalPosition(mesh);
+      return;
+    }
+
+    const stillAssembled = mesh.position.distanceTo(assembledPosition) < this.snapThreshold;
+
+    if (stillAssembled) {
+      this.returnToAssembledPosition(mesh);
+      return;
+    }
+
+    this.disassembleFrom(componentId);
+  }
+
+  canUndoLastAssembly(): boolean {
+    return this.isDragDropMode() && this.currentStep > 0 && !this.movingComponentId;
+  }
+
+  undoLastAssembly(): string | null {
+    if (!this.canUndoLastAssembly()) return null;
+
+    const model = this.project.models[this.currentStep - 1];
+    const mesh = this.meshMap[model.id];
+
+    if (!mesh) return null;
+
+    this.currentStep--;
+    mesh.userData['assembled'] = false;
+    mesh.userData['locked'] = false;
+    mesh.userData['isDragging'] = false;
+    mesh.userData['assembledPosition'] = null;
+    this.returnToOriginalPosition(mesh);
+
+    return model.id;
+  }
+
+  private disassembleFrom(componentId: string) {
+    const stepIndex = this.project.models.findIndex(model => model.id === componentId);
+
+    if (stepIndex === -1 || stepIndex >= this.currentStep) return;
+
+    for (let i = stepIndex; i < this.currentStep; i++) {
+      const model = this.project.models[i];
+      const mesh = this.meshMap[model.id];
+
+      if (!mesh) continue;
+
+      mesh.userData['assembled'] = false;
+      mesh.userData['locked'] = false;
+      mesh.userData['isDragging'] = false;
+      mesh.userData['assembledPosition'] = null;
+      this.returnToOriginalPosition(mesh);
+    }
+
+    this.currentStep = stepIndex;
+    this.componentDisassembled.emit(componentId);
+  }
+
+  private returnToOriginalPosition(mesh: THREE.Mesh) {
+    const original = mesh.userData['originalPosition'] as THREE.Vector3 | undefined;
+    if (!original) return;
+
+    mesh.userData['isMoving'] = true;
+    mesh.userData['targetPosition'] = {
+      x: original.x,
+      y: original.y,
+      z: original.z
+    };
+    mesh.userData['onArrival'] = () => {
+      mesh.userData['isMoving'] = false;
+    };
+  }
+
+  private returnToAssembledPosition(mesh: THREE.Mesh) {
+    const assembledPosition = mesh.userData['assembledPosition'] as THREE.Vector3 | undefined;
+    if (!assembledPosition) return;
+
+    mesh.userData['isMoving'] = true;
+    mesh.userData['targetPosition'] = {
+      x: assembledPosition.x,
+      y: assembledPosition.y,
+      z: assembledPosition.z
+    };
+    mesh.userData['onArrival'] = () => {
+      mesh.userData['isMoving'] = false;
+      mesh.rotation.set(0, 0, 0);
+    };
+  }
+
+  private getAssemblyTarget(componentId: string): THREE.Vector3 | null {
+    const configuredTarget = this.assemblyTargets[componentId];
+    if (configuredTarget) return configuredTarget;
+
+    const index = this.project.models.findIndex(model => model.id === componentId);
+    if (index === -1) return null;
+
+    return new THREE.Vector3(3, -3 + index * 0.7, 0);
+  }
+
+  private createAssemblyTargetGhosts() {
+    this.clearAssemblyTargetGhosts();
+
+    if (!this.isDragDropMode()) return;
+
+    this.project.models.forEach(model => {
+      const target = this.getAssemblyTarget(model.id);
+      if (!target) return;
+
+      const geometry = new THREE.BoxGeometry(1.2, 0.2, 1.2);
+      const material = new THREE.MeshStandardMaterial({
+        color: 0x22c55e,
+        transparent: true,
+        opacity: 0.22,
+        emissive: 0x0f5132,
+        emissiveIntensity: 0.35,
+      });
+      const ghost = new THREE.Mesh(geometry, material);
+
+      ghost.position.copy(target);
+      ghost.userData['targetFor'] = model.id;
+      this.scene.add(ghost);
+      this.targetGhosts.push(ghost);
+    });
+  }
+
+  private highlightTarget(componentId: string, valid: boolean) {
+    this.targetGhosts.forEach(ghost => {
+      if (ghost.userData['targetFor'] !== componentId) return;
+
+      const material = ghost.material as THREE.MeshStandardMaterial;
+      material.color.set(valid ? 0x22c55e : 0xef4444);
+      material.opacity = valid ? 0.45 : 0.32;
+      material.needsUpdate = true;
+    });
+  }
+
+  private clearTargetHighlights() {
+    this.targetGhosts.forEach(ghost => {
+      const material = ghost.material as THREE.MeshStandardMaterial;
+      material.color.set(0x22c55e);
+      material.opacity = 0.22;
+      material.needsUpdate = true;
+    });
+  }
+
+  private clearAssemblyTargetGhosts() {
+    this.targetGhosts.forEach(ghost => {
+      this.scene?.remove(ghost);
+      ghost.geometry.dispose();
+      (ghost.material as THREE.Material).dispose();
+    });
+
+    this.targetGhosts = [];
+  }
+
+  private disposeDragControls() {
+    if (!this.dragControls) return;
+
+    this.dragControls.dispose();
+    this.dragControls = undefined as unknown as DragControls;
+  }
+
+  private resetScene() {
+    this.disposeDragControls();
+    this.clearAssemblyTargetGhosts();
+    this.meshMap = {};
+    this.slotMap = {};
+
+    while (this.scene.children.length) {
+      const child = this.scene.children[0];
+      this.scene.remove(child);
+    }
+
+    this.initScene();
   }
 
   private getModelFileUrl(file: string): string {

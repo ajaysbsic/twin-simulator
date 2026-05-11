@@ -19,12 +19,43 @@
         <span>3D Assembly Workspace</span>
         <strong>{{ project.models.length }} parts loaded</strong>
       </div>
+
+      <div class="mode-tabs" role="tablist" aria-label="Assembly mode">
+        <button
+          type="button"
+          role="tab"
+          [class.active]="activeViewerMode === 'guided'"
+          [attr.aria-selected]="activeViewerMode === 'guided'"
+          (click)="setViewerMode('guided')">
+          Guided
+        </button>
+
+        <button
+          type="button"
+          role="tab"
+          [class.active]="activeViewerMode === 'drag-drop'"
+          [attr.aria-selected]="activeViewerMode === 'drag-drop'"
+          (click)="setViewerMode('drag-drop')">
+          Drag & Drop
+        </button>
+      </div>
+
+      <button
+        type="button"
+        class="undo-button"
+        [class.visible]="activeViewerMode === 'drag-drop'"
+        [disabled]="!canUndoDragDrop"
+        (click)="undoLastAssembly()">
+        Undo
+      </button>
     </div>
 
     <app-viewer
       [project]="project"
+      [interactionMode]="activeViewerMode"
       (meshClicked)="onMeshClick($event)"
-      (componentAssembled)="onComponentAssembled($event)">
+      (componentAssembled)="onComponentAssembled($event)"
+      (componentDisassembled)="onComponentDisassembled($event)">
     </app-viewer>
   </div>
 
