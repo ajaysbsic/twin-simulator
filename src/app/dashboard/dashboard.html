@@ -4,8 +4,8 @@
       <div class="eyebrow">Digital assembly training</div>
       <h1>Digital Twin Studio</h1>
       <p>
-        Upload STL or GLB parts, generate reusable assembly projects, and train
-        with interactive 3D placement.
+        Upload one GLB assembly, extract every mesh as a part, and generate
+        a ready-to-run digital twin simulation.
       </p>
     </div>
 
@@ -36,8 +36,8 @@
         </div>
 
         <div class="project-meta">
-          <span>{{ project.models.length }} STL parts</span>
-          <span>{{ project.models[0]?.id || 'No parts' }}</span>
+          <span>{{ project.models.length }} parts</span>
+          <span>{{ project.sourceFileName || project.models[0]?.id || 'No parts' }}</span>
         </div>
 
         <div class="actions">
@@ -54,7 +54,7 @@
       <div class="dialog-header">
         <div>
           <span>{{ editingProject ? 'Edit simulation' : 'Create simulation' }}</span>
-          <h2>{{ editingProject ? 'Update project' : 'Upload model files' }}</h2>
+          <h2>{{ editingProject ? 'Re-import assembly' : 'Import GLB assembly' }}</h2>
         </div>
         <button class="icon-button" (click)="closeProjectDialog()">x</button>
       </div>
@@ -70,23 +70,16 @@
       </label>
 
       <label class="upload-zone">
-        <input type="file" accept=".stl,.glb" multiple (change)="onModelsSelected($event)" />
+        <input type="file" accept=".glb,model/gltf-binary" (change)="onModelsSelected($event)" />
         <strong>
           {{
-            selectedModelFiles.length
-              ? selectedModelFiles.length + ' model file(s) selected'
-              : 'Upload STL or GLB files'
+            selectedGlbFile
+              ? selectedGlbFile.name
+              : 'Upload one GLB assembly'
           }}
         </strong>
-        <span>Parts are registered automatically and placed in upload order.</span>
+        <span>The importer detects meshes, hierarchy, transforms, exploded positions, and assembly order.</span>
       </label>
-
-      <div class="selected-files" *ngIf="selectedModelFiles.length">
-        <div *ngFor="let file of selectedModelFiles; let i = index">
-          <span>Part {{ i + 1 }}</span>
-          <strong>{{ file.name }}</strong>
-        </div>
-      </div>
 
       <label class="upload-zone optional">
         <input type="file" accept="image/*" (change)="onThumbnailSelected($event)" />
@@ -94,20 +87,51 @@
         <span>Optional project image for the library card.</span>
       </label>
 
-      <label class="json-fallback">
-        JSON fallback
-        <input type="file" accept=".json,application/json" (change)="onConfigSelected($event)" />
-        <textarea [(ngModel)]="configText" placeholder="{ &quot;models&quot;: [] }"></textarea>
-      </label>
+      <section class="import-preview" *ngIf="showImportPreview && importPreview">
+        <div>
+          <span>Import Preview</span>
+          <strong>{{ importPreview.parts.length }} mesh parts detected</strong>
+        </div>
+
+        <div class="preview-columns">
+          <div>
+            <h3>Hierarchy</h3>
+            <p *ngFor="let part of importPreview.parts">{{ part.hierarchyPath }}</p>
+          </div>
+
+          <div>
+            <h3>Assembly Sequence</h3>
+            <p *ngFor="let part of importPreview.parts">
+              {{ part.assemblyStep }}. {{ part.name }}
+            </p>
+          </div>
+        </div>
+      </section>
 
       <p class="dialog-error" *ngIf="dialogError">{{ dialogError }}</p>
 
       <div class="dialog-actions">
-        <button class="ghost-action" (click)="closeProjectDialog()">Cancel</button>
+        <button class="ghost-action" (click)="showImportPreview ? cancelImportPreview() : closeProjectDialog()">
+          {{ showImportPreview ? 'Back' : 'Cancel' }}
+        </button>
         <button class="primary-action" (click)="saveProjectFromDialog()">
-          {{ editingProject ? 'Save Changes' : 'Create Project' }}
+          {{ showImportPreview ? 'Confirm Import' : 'Process GLB' }}
         </button>
       </div>
     </section>
+  </div>
+
+  <div class="processing-overlay" *ngIf="isImporting">
+    <div class="processing-card">
+      <div class="spinner"></div>
+      <span>GLB Import Engine</span>
+      <h2>{{ currentImportStage }}</h2>
+      <div class="stage-list">
+        <div *ngFor="let stage of importStages">
+          <span>{{ completedStages.includes(stage.message) ? '✓' : currentImportStage === stage.message ? '…' : '' }}</span>
+          <strong>{{ stage.message }}</strong>
+        </div>
+      </div>
+    </div>
   </div>
 </main>

@@ -259,19 +259,49 @@ textarea {
   display: none;
 }
 
-.selected-files {
+.processing-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
   display: grid;
-  gap: 8px;
-  margin: -4px 0 16px;
+  place-items: center;
+  background: rgba(3, 7, 18, 0.82);
 }
 
-.selected-files div {
+.processing-card {
+  width: min(440px, calc(100vw - 48px));
+  padding: 28px;
+  text-align: center;
+  background: rgba(15, 23, 42, 0.92);
+}
+
+.spinner {
+  width: 52px;
+  height: 52px;
+  margin: 0 auto 20px;
+  border: 4px solid rgba(125, 211, 252, 0.18);
+  border-top-color: #67e8f9;
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+
+.stage-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 18px;
+  text-align: left;
+}
+
+.stage-list div {
   display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  background: rgba(2, 6, 23, 0.28);
+  gap: 10px;
+  color: rgba(248, 251, 255, 0.72);
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .upload-zone span,

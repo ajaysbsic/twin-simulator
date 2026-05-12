@@ -121,7 +121,9 @@
   left: 22px;
   right: 22px;
   display: flex;
-  justify-content: space-between;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: flex-start;
   gap: 16px;
   pointer-events: none;
 }
@@ -169,10 +171,56 @@
   background: #67e8f9;
 }
 
+.mode-tabs button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.assembly-playback {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  align-self: flex-start;
+  min-height: 46px;
+  padding: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  background: rgba(2, 6, 23, 0.5);
+  backdrop-filter: blur(18px);
+  pointer-events: auto;
+}
+
+.auto-assembly-button {
+  min-width: 132px;
+  height: 36px;
+  border: 0;
+  border-radius: 6px;
+  color: #04111d;
+  background: #a7f3d0;
+  font-weight: 900;
+  cursor: pointer;
+  transition: background 160ms ease, color 160ms ease, opacity 160ms ease;
+}
+
+.auto-assembly-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.assembly-playback span {
+  min-width: 118px;
+  padding-right: 10px;
+  color: rgba(248, 251, 255, 0.78);
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
 .undo-button,
 .rotate-button {
-  display: none;
-  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-width: 84px;
   height: 46px;
   border: 1px solid rgba(255, 255, 255, 0.16);
@@ -186,16 +234,18 @@
 }
 
 .rotate-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
   min-width: 142px;
 }
 
-.undo-button.visible {
+.viewer-bottom-actions {
+  position: absolute;
+  z-index: 2;
+  right: 22px;
+  bottom: 22px;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
+  gap: 10px;
+  pointer-events: auto;
 }
 
 .rotate-button.active {
@@ -223,5 +273,17 @@
 
   .viewer-area {
     min-height: 65vh;
+  }
+
+  .viewer-topbar {
+    position: absolute;
+    gap: 10px;
+  }
+
+  .viewer-bottom-actions {
+    right: 14px;
+    bottom: 14px;
+    left: 14px;
+    justify-content: flex-end;
   }
 }

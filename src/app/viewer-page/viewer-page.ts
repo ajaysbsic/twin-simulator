@@ -52,8 +52,7 @@ export class ViewerPageComponent {
     componentId: string;
   }) {
 
-    if (this.workspaceMode === 'editor') return;
-    if (this.activeViewerMode === 'drag-drop') return;
+    if (this.workspaceMode === 'editor' || this.assemblyRotationEnabled || this.isAutoAssemblyBusy) return;
 
     if (!this.viewer) return;
 
@@ -71,6 +70,8 @@ export class ViewerPageComponent {
   onMeshClick(componentId: string) {
     if (this.workspaceMode === 'editor') return;
     if (this.activeViewerMode === 'drag-drop') return;
+    if (this.assemblyRotationEnabled) return;
+    if (this.isAutoAssemblyBusy) return;
 
     const stepIndex =
       this.home.steps.findIndex(
@@ -93,9 +94,12 @@ export class ViewerPageComponent {
     this.home.undoStep(componentId);
   }
 
-  get canUndoDragDrop(): boolean {
+  onAssemblyExploded() {
+    this.home.resetProgress();
+  }
+
+  get canUndoAssembly(): boolean {
     return this.workspaceMode === 'simulation' &&
-      this.activeViewerMode === 'drag-drop' &&
       !!this.viewer?.canUndoLastAssembly();
   }
 
@@ -103,8 +107,25 @@ export class ViewerPageComponent {
     return this.workspaceMode === 'simulation' && !!this.viewer?.canRotateAssembly();
   }
 
+  get canToggleAutoAssembly(): boolean {
+    return this.workspaceMode === 'simulation' && !!this.viewer?.canToggleAutoAssembly();
+  }
+
+  get autoAssemblyLabel(): string {
+    if (this.viewer?.isFullyAssembled) return 'Explode';
+    return 'Assemble All';
+  }
+
+  get autoAssemblyProgress(): string {
+    return this.viewer?.autoAssemblyProgress || '';
+  }
+
+  get isAutoAssemblyBusy(): boolean {
+    return !!this.viewer?.isAutoAssembling || !!this.autoAssemblyProgress;
+  }
+
   undoLastAssembly() {
-    if (this.activeViewerMode !== 'drag-drop') return;
+    if (this.workspaceMode !== 'simulation') return;
 
     const componentId = this.viewer?.undoLastAssembly();
 
@@ -120,7 +141,15 @@ export class ViewerPageComponent {
     this.assemblyRotationEnabled = !this.assemblyRotationEnabled;
   }
 
+  async toggleAutoAssembly() {
+    if (!this.canToggleAutoAssembly) return;
+
+    this.assemblyRotationEnabled = false;
+    await this.viewer.toggleAutoAssembly();
+  }
+
   setViewerMode(mode: 'guided' | 'drag-drop') {
+    if (this.isAutoAssemblyBusy) return;
     if (this.activeViewerMode === mode) return;
 
     this.activeViewerMode = mode;
@@ -129,6 +158,7 @@ export class ViewerPageComponent {
   }
 
   setWorkspaceMode(mode: 'simulation' | 'editor') {
+    if (this.isAutoAssemblyBusy) return;
     if (this.workspaceMode === mode) return;
 
     this.workspaceMode = mode;

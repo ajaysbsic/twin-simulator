@@ -64,6 +64,7 @@
           role="tab"
           [class.active]="workspaceMode === 'simulation'"
           [attr.aria-selected]="workspaceMode === 'simulation'"
+          [disabled]="isAutoAssemblyBusy"
           (click)="setWorkspaceMode('simulation')">
           Simulation
         </button>
@@ -73,6 +74,7 @@
           role="tab"
           [class.active]="workspaceMode === 'editor'"
           [attr.aria-selected]="workspaceMode === 'editor'"
+          [disabled]="isAutoAssemblyBusy"
           (click)="setWorkspaceMode('editor')">
           Editor
         </button>
@@ -84,6 +86,7 @@
           role="tab"
           [class.active]="activeViewerMode === 'guided'"
           [attr.aria-selected]="activeViewerMode === 'guided'"
+          [disabled]="isAutoAssemblyBusy"
           (click)="setViewerMode('guided')">
           Guided
         </button>
@@ -93,16 +96,30 @@
           role="tab"
           [class.active]="activeViewerMode === 'drag-drop'"
           [attr.aria-selected]="activeViewerMode === 'drag-drop'"
+          [disabled]="isAutoAssemblyBusy"
           (click)="setViewerMode('drag-drop')">
           Drag & Drop
         </button>
       </div>
 
+      <div class="assembly-playback" *ngIf="workspaceMode === 'simulation'">
+        <button
+          type="button"
+          class="auto-assembly-button"
+          [disabled]="!canToggleAutoAssembly"
+          (click)="toggleAutoAssembly()">
+          {{ autoAssemblyLabel }}
+        </button>
+        <span *ngIf="autoAssemblyProgress">{{ autoAssemblyProgress }}</span>
+      </div>
+
+    </div>
+
+    <div class="viewer-bottom-actions" *ngIf="workspaceMode === 'simulation'">
       <button
         type="button"
-        class="undo-button"
-        [class.visible]="workspaceMode === 'simulation' && activeViewerMode === 'drag-drop'"
-        [disabled]="!canUndoDragDrop"
+        class="undo-button visible"
+        [disabled]="!canUndoAssembly"
         (click)="undoLastAssembly()">
         Undo
       </button>
@@ -110,11 +127,10 @@
       <button
         type="button"
         class="rotate-button"
-        *ngIf="workspaceMode === 'simulation'"
         [class.active]="assemblyRotationEnabled"
         [disabled]="!canRotateAssembly"
         (click)="toggleAssemblyRotation()">
-        Rotate Assembly
+        {{ assemblyRotationEnabled ? 'Rotate OFF' : 'Rotate ON' }}
       </button>
     </div>
 
@@ -126,7 +142,8 @@
       [assemblyRotationEnabled]="assemblyRotationEnabled"
       (meshClicked)="onMeshClick($event)"
       (componentAssembled)="onComponentAssembled($event)"
-      (componentDisassembled)="onComponentDisassembled($event)">
+      (componentDisassembled)="onComponentDisassembled($event)"
+      (assemblyExploded)="onAssemblyExploded()">
     </app-viewer>
   </div>
 
