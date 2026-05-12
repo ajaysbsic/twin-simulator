@@ -9,6 +9,8 @@ import * as THREE from 'three';
 import { ProjectModel } from '../models/project.model';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
 import { DragControls } from 'three/examples/jsm/controls/DragControls.js';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 
 @Component({
   selector: 'app-viewer',
@@ -19,7 +21,10 @@ import { DragControls } from 'three/examples/jsm/controls/DragControls.js';
 export class ViewerComponent implements AfterViewInit, OnDestroy {
 
   @Input() project!: ProjectModel;
+  @Input() workspaceMode: 'simulation' | 'editor' = 'simulation';
   @Input() interactionMode: 'guided' | 'drag-drop' = 'guided';
+  @Input() editorTransformMode: 'translate' | 'rotate' | 'scale' = 'translate';
+  @Input() assemblyRotationEnabled = false;
   @Output() meshClicked = new EventEmitter<string>();
   @Output() componentAssembled = new EventEmitter<string>();
   @Output() componentDisassembled = new EventEmitter<string>();
@@ -32,8 +37,10 @@ export class ViewerComponent implements AfterViewInit, OnDestroy {
   camera!: THREE.PerspectiveCamera;
   renderer!: THREE.WebGLRenderer;
   dragControls!: DragControls;
+  transformControls!: TransformControls;
+  assemblyGroup!: THREE.Group;
 
-  meshMap: { [key: string]: THREE.Mesh } = {};
+  meshMap: { [key: string]: THREE.Object3D } = {};
   slotMap: { [key: string]: THREE.Mesh } = {};
 
   stackOffset = { x: 3, y: -1.5 };
@@ -44,6 +51,10 @@ export class ViewerComponent implements AfterViewInit, OnDestroy {
   private currentStep = 0;
   private movingComponentId: string | null = null;
   private viewReady = false;
+  private isRotatingAssembly = false;
+  private lastRotationPointer = { x: 0, y: 0 };
+  private selectedObject: THREE.Object3D | null = null;
+  private selectedOriginalEmissive = new Map<THREE.Material, number>();
   private snapThreshold = 0.85;
   private targetGhosts: THREE.Mesh[] = [];
   private readonly assemblyTargets: { [key: string]: THREE.Vector3 } = {
@@ -58,6 +69,7 @@ export class ViewerComponent implements AfterViewInit, OnDestroy {
   mouse = new THREE.Vector2();
 
   loader = new STLLoader();
+  gltfLoader = new GLTFLoader();
 
   constructor(@Inject(PLATFORM_ID) platformId: Object) {
     this.isBrowser = isPlatformBrowser(platformId);
@@ -69,9 +81,13 @@ export class ViewerComponent implements AfterViewInit, OnDestroy {
 
     if (
       this.viewReady &&
-      (changes['interactionMode'] || changes['project'])
+      (changes['interactionMode'] || changes['project'] || changes['workspaceMode'])
     ) {
       this.resetScene();
+    } else if (changes['editorTransformMode']) {
+      this.transformControls?.setMode(this.editorTransformMode);
+    } else if (changes['assemblyRotationEnabled']) {
+      this.updateDragControlsEnabled();
     }
   }
 
@@ -81,6 +97,15 @@ export class ViewerComponent implements AfterViewInit, OnDestroy {
     this.canvasRef.nativeElement.addEventListener('click', (event: MouseEvent) => {
       this.onCanvasClick(event);
     });
+    this.canvasRef.nativeElement.addEventListener('pointerdown', (event: PointerEvent) => {
+      this.onAssemblyRotatePointerDown(event);
+    });
+    window.addEventListener('pointermove', (event: PointerEvent) => {
+      this.onAssemblyRotatePointerMove(event);
+    });
+    window.addEventListener('pointerup', () => {
+      this.onAssemblyRotatePointerUp();
+    });
 
     this.initScene();
     this.animate();
@@ -89,6 +114,7 @@ export class ViewerComponent implements AfterViewInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.disposeDragControls();
+    this.disposeTransformControls();
     this.renderer?.dispose();
   }
 
@@ -98,6 +124,8 @@ export class ViewerComponent implements AfterViewInit, OnDestroy {
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color('#050816');
+    this.assemblyGroup = new THREE.Group();
+    this.scene.add(this.assemblyGroup);
 
     this.camera = new THREE.PerspectiveCamera(75, width / height, 0.1, 1000);
     this.camera.position.z = 6;
@@ -108,6 +136,7 @@ export class ViewerComponent implements AfterViewInit, OnDestroy {
     });
 
     this.renderer.setSize(width, height);
+    this.setupTransformControls();
 
     const light = new THREE.DirectionalLight(0xffffff, 1);
     light.position.set(2, 2, 5);
@@ -126,7 +155,7 @@ export class ViewerComponent implements AfterViewInit, OnDestroy {
     requestAnimationFrame(() => this.animate());
 
     Object.values(this.meshMap).forEach(mesh => {
-      if (!mesh.userData['assembled'] && !mesh.userData['isMoving'] && !mesh.userData['isDragging']) {
+      if (!this.isEditorMode() && !mesh.userData['assembled'] && !mesh.userData['isMoving'] && !mesh.userData['isDragging']) {
         mesh.rotation.y += mesh.userData['rotationSpeed'] || 0.002;
       }
 
@@ -163,50 +192,24 @@ export class ViewerComponent implements AfterViewInit, OnDestroy {
   loadSTL(model: any, index: number) {
     if (!this.isStlMode) return;
 
-    this.loader.load(this.getModelFileUrl(model.file), (geometry) => {
+    const modelUrl = this.getModelFileUrl(model.file);
+    const fileType = this.getModelFileType(model);
+
+    if (fileType === 'glb') {
+      this.loadGLB(model, index, modelUrl);
+      return;
+    }
+
+    this.loader.load(modelUrl, (geometry) => {
       geometry.center();
 
       const material = new THREE.MeshStandardMaterial({ color: 0xbdbdbd });
       const mesh = new THREE.Mesh(geometry, material);
 
-      const scale = model.scale || 0.006;
-      mesh.scale.set(scale, scale, scale);
-
-      const initialPosition =
-        model.initialPosition || this.getFloatingPosition(index);
-
-      mesh.position.set(
-        initialPosition[0],
-        initialPosition[1],
-        initialPosition[2]
-      );
-
-      mesh.rotation.x = -Math.PI / 2;
-      mesh.updateMatrixWorld(true);
-
-      mesh.userData['componentId'] = model.id;
-      mesh.userData['assembled'] = false;
-      mesh.userData['isMoving'] = false;
-      mesh.userData['isDragging'] = false;
-      mesh.userData['locked'] = false;
-      mesh.userData['targetPosition'] = null;
-      mesh.userData['finalPosition'] = model.targetPosition;
-      mesh.userData['originalPosition'] = mesh.position.clone();
-      mesh.userData['assembledPosition'] = null;
-      mesh.userData['dragRejectedOnStart'] = false;
-      mesh.userData['rotationSpeed'] = 0.001 + Math.random() * 0.002;
-
-      this.scene.add(mesh);
-      this.meshMap[model.id] = mesh;
-
-      this.stlLoadedCount++;
-      if (this.stlLoadedCount === this.stlTotal) {
-        this.stlReady = true;
-
-        if (this.isDragDropMode()) {
-          this.setupDragControls();
-        }
-      }
+      mesh.rotation.x = model.rotation?.[0] ?? -Math.PI / 2;
+      mesh.rotation.y = model.rotation?.[1] ?? 0;
+      mesh.rotation.z = model.rotation?.[2] ?? 0;
+      this.registerLoadedModel(model, index, mesh);
     });
   }
 
@@ -218,6 +221,93 @@ export class ViewerComponent implements AfterViewInit, OnDestroy {
     this.movingComponentId = null;
     this.createAssemblyTargetGhosts();
     this.project?.models?.forEach((m, i) => this.loadSTL(m, i));
+  }
+
+  private loadGLB(model: any, index: number, modelUrl: string) {
+    this.gltfLoader.load(modelUrl, (gltf) => {
+      const group = new THREE.Group();
+      const gltfScene = gltf.scene;
+
+      group.add(gltfScene);
+      group.updateMatrixWorld(true);
+
+      const box = new THREE.Box3().setFromObject(gltfScene);
+      const center = box.getCenter(new THREE.Vector3());
+      gltfScene.position.sub(center);
+
+      group.rotation.x = model.rotation?.[0] ?? 0;
+      group.rotation.y = model.rotation?.[1] ?? 0;
+      group.rotation.z = model.rotation?.[2] ?? 0;
+
+      this.registerLoadedModel(model, index, group);
+    });
+  }
+
+  private registerLoadedModel(model: any, index: number, object: THREE.Object3D) {
+    const scale = model.scale ?? (this.getModelFileType(model) === 'glb' ? 1 : 0.006);
+    object.scale.set(scale, scale, scale);
+
+    const initialPosition =
+      this.isEditorMode() && model.targetPosition
+        ? model.targetPosition
+        : model.initialPosition || this.getFloatingPosition(index);
+
+    object.position.set(
+      initialPosition[0],
+      initialPosition[1],
+      initialPosition[2]
+    );
+
+    object.updateMatrixWorld(true);
+    object.userData['componentId'] = model.id;
+    object.userData['assembled'] = false;
+    object.userData['isMoving'] = false;
+    object.userData['isDragging'] = false;
+    object.userData['locked'] = false;
+    object.userData['targetPosition'] = null;
+    object.userData['finalPosition'] = model.targetPosition;
+    object.userData['originalPosition'] = object.position.clone();
+    object.userData['assembledPosition'] = null;
+    object.userData['dragRejectedOnStart'] = false;
+    object.userData['rotationSpeed'] = 0.001 + Math.random() * 0.002;
+
+    this.scene.add(object);
+    this.meshMap[model.id] = object;
+    this.markPartChildren(object, model.id);
+    this.completeModelLoad();
+  }
+
+  private markPartChildren(object: THREE.Object3D, componentId: string) {
+    object.traverse(child => {
+      child.userData['componentId'] = componentId;
+      child.userData['partRoot'] = object;
+    });
+  }
+
+  private completeModelLoad() {
+    this.stlLoadedCount++;
+
+    if (this.stlLoadedCount === this.stlTotal) {
+      this.stlReady = true;
+
+      if (this.isDragDropMode()) {
+        this.setupDragControls();
+      }
+    }
+  }
+
+  private setupTransformControls() {
+    if (!this.isEditorMode()) return;
+
+    this.transformControls = new TransformControls(this.camera, this.renderer.domElement);
+    this.transformControls.setMode(this.editorTransformMode);
+    this.transformControls.setSize(0.85);
+    this.transformControls.addEventListener('dragging-changed', (event: any) => {
+      Object.values(this.meshMap).forEach(mesh => {
+        mesh.userData['isDragging'] = event.value;
+      });
+    });
+    this.scene.add(this.transformControls as unknown as THREE.Object3D);
   }
 
   loadCubeSimulation() {
@@ -273,6 +363,12 @@ export class ViewerComponent implements AfterViewInit, OnDestroy {
   }
 
   onCanvasClick(event: MouseEvent) {
+    if (this.isEditorMode()) {
+      this.selectEditorObject(event);
+      return;
+    }
+
+    if (this.assemblyRotationEnabled) return;
     if (this.isDragDropMode()) return;
     if (this.isStlMode && !this.stlReady) return;
     const rect = this.canvasRef.nativeElement.getBoundingClientRect();
@@ -282,11 +378,12 @@ export class ViewerComponent implements AfterViewInit, OnDestroy {
 
     this.raycaster.setFromCamera(this.mouse, this.camera);
 
-    const hits = this.raycaster.intersectObjects(Object.values(this.meshMap));
+    const hits = this.raycaster.intersectObjects(Object.values(this.meshMap), true);
 
     if (hits.length > 0) {
-      const mesh = hits[0].object as THREE.Mesh;
-      const id = Object.keys(this.meshMap).find(k => this.meshMap[k] === mesh);
+      const hitObject = hits[0].object;
+      const root = hitObject.userData['partRoot'] || hitObject;
+      const id = Object.keys(this.meshMap).find(k => this.meshMap[k] === root);
 
       if (id) {
         this.meshClicked.emit(id);
@@ -312,8 +409,13 @@ export class ViewerComponent implements AfterViewInit, OnDestroy {
         return false;
       }
 
+      const defaultFinalPosition = this.getDefaultFinalPosition(this.currentStep);
       const finalPosition =
-        mesh.userData['finalPosition'] || this.getDefaultFinalPosition(this.currentStep);
+        this.getAssemblyTarget(componentId) || new THREE.Vector3(
+          defaultFinalPosition[0],
+          defaultFinalPosition[1],
+          defaultFinalPosition[2]
+        );
 
       this.movingComponentId = componentId;
       mesh.userData['isMoving'] = true;
@@ -326,15 +428,17 @@ export class ViewerComponent implements AfterViewInit, OnDestroy {
 
       mesh.userData['onArrival'] = () => {
         mesh.userData['targetPosition'] = {
-          x: finalPosition[0] + this.stackOffset.x,
-          y: finalPosition[1] + this.stackOffset.y,
-          z: finalPosition[2]
+          x: finalPosition.x,
+          y: finalPosition.y,
+          z: finalPosition.z
         };
 
         mesh.userData['onArrival'] = () => {
           mesh.userData['assembled'] = true;
           mesh.userData['isMoving'] = false;
           this.movingComponentId = null;
+          this.applySavedRotation(mesh, componentId);
+          this.addMeshToAssemblyGroup(mesh);
           this.currentStep++;
           this.componentAssembled.emit(componentId);
         };
@@ -356,6 +460,7 @@ export class ViewerComponent implements AfterViewInit, OnDestroy {
     mesh.userData['onArrival'] = () => {
       mesh.userData['assembled'] = true;
       mesh.userData['isMoving'] = false;
+      this.addMeshToAssemblyGroup(mesh);
       this.componentAssembled.emit(componentId);
     };
 
@@ -373,12 +478,16 @@ export class ViewerComponent implements AfterViewInit, OnDestroy {
     const mesh = this.meshMap[componentId];
     if (!mesh) return;
 
-    const mat = mesh.material as THREE.MeshStandardMaterial;
-    const original = mat.color.getHex();
+    mesh.traverse(child => {
+      const material = (child as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
 
-    mat.color.set(0xff0000);
+      if (!material?.color) return;
 
-    setTimeout(() => mat.color.set(original), 500);
+      const original = material.color.getHex();
+      material.color.set(0xff0000);
+
+      setTimeout(() => material.color.set(original), 500);
+    });
   }
 
   createTextTexture(text: string): THREE.CanvasTexture {
@@ -413,10 +522,16 @@ export class ViewerComponent implements AfterViewInit, OnDestroy {
   }
 
   private isDragDropMode(): boolean {
-    return this.interactionMode === 'drag-drop' && this.isStlMode;
+    return this.workspaceMode === 'simulation' && this.interactionMode === 'drag-drop' && this.isStlMode;
+  }
+
+  private isEditorMode(): boolean {
+    return this.workspaceMode === 'editor' && this.isStlMode;
   }
 
   private setupDragControls() {
+    if (this.isEditorMode()) return;
+
     this.disposeDragControls();
 
     this.dragControls = new DragControls(
@@ -426,7 +541,7 @@ export class ViewerComponent implements AfterViewInit, OnDestroy {
     );
 
     this.dragControls.addEventListener('dragstart', (event) => {
-      const mesh = event.object as THREE.Mesh;
+      const mesh = event.object;
       const componentId = mesh.userData['componentId'];
       const expectedModel = this.project.models[this.currentStep];
       const canDrag =
@@ -439,12 +554,12 @@ export class ViewerComponent implements AfterViewInit, OnDestroy {
     });
 
     this.dragControls.addEventListener('drag', (event) => {
-      const mesh = event.object as THREE.Mesh;
+      const mesh = event.object;
       mesh.position.z = 0;
     });
 
     this.dragControls.addEventListener('dragend', (event) => {
-      const mesh = event.object as THREE.Mesh;
+      const mesh = event.object;
       mesh.userData['isDragging'] = false;
       mesh.position.z = 0;
       this.clearTargetHighlights();
@@ -452,7 +567,7 @@ export class ViewerComponent implements AfterViewInit, OnDestroy {
     });
   }
 
-  private handleDragDrop(mesh: THREE.Mesh) {
+  private handleDragDrop(mesh: THREE.Object3D) {
     const componentId = mesh.userData['componentId'];
 
     if (mesh.userData['assembled'] || mesh.userData['locked']) {
@@ -470,12 +585,13 @@ export class ViewerComponent implements AfterViewInit, OnDestroy {
 
     if (isCorrectSequence && isNearTarget && target) {
       mesh.position.copy(target);
-      mesh.rotation.set(0, 0, 0);
+      this.applySavedRotation(mesh, componentId);
       mesh.userData['assembled'] = true;
       mesh.userData['locked'] = true;
       mesh.userData['isMoving'] = false;
       mesh.userData['targetPosition'] = null;
       mesh.userData['assembledPosition'] = target.clone();
+      this.addMeshToAssemblyGroup(mesh);
       this.currentStep++;
       this.componentAssembled.emit(componentId);
       return;
@@ -485,7 +601,7 @@ export class ViewerComponent implements AfterViewInit, OnDestroy {
     this.returnToOriginalPosition(mesh);
   }
 
-  private handleAssembledPartDrop(mesh: THREE.Mesh) {
+  private handleAssembledPartDrop(mesh: THREE.Object3D) {
     const componentId = mesh.userData['componentId'];
     const assembledPosition = mesh.userData['assembledPosition'] as THREE.Vector3 | undefined;
 
@@ -521,6 +637,7 @@ export class ViewerComponent implements AfterViewInit, OnDestroy {
     mesh.userData['locked'] = false;
     mesh.userData['isDragging'] = false;
     mesh.userData['assembledPosition'] = null;
+    this.removeMeshFromAssemblyGroup(mesh);
     this.returnToOriginalPosition(mesh);
 
     return model.id;
@@ -541,6 +658,7 @@ export class ViewerComponent implements AfterViewInit, OnDestroy {
       mesh.userData['locked'] = false;
       mesh.userData['isDragging'] = false;
       mesh.userData['assembledPosition'] = null;
+      this.removeMeshFromAssemblyGroup(mesh);
       this.returnToOriginalPosition(mesh);
     }
 
@@ -548,7 +666,7 @@ export class ViewerComponent implements AfterViewInit, OnDestroy {
     this.componentDisassembled.emit(componentId);
   }
 
-  private returnToOriginalPosition(mesh: THREE.Mesh) {
+  private returnToOriginalPosition(mesh: THREE.Object3D) {
     const original = mesh.userData['originalPosition'] as THREE.Vector3 | undefined;
     if (!original) return;
 
@@ -563,7 +681,7 @@ export class ViewerComponent implements AfterViewInit, OnDestroy {
     };
   }
 
-  private returnToAssembledPosition(mesh: THREE.Mesh) {
+  private returnToAssembledPosition(mesh: THREE.Object3D) {
     const assembledPosition = mesh.userData['assembledPosition'] as THREE.Vector3 | undefined;
     if (!assembledPosition) return;
 
@@ -580,13 +698,38 @@ export class ViewerComponent implements AfterViewInit, OnDestroy {
   }
 
   private getAssemblyTarget(componentId: string): THREE.Vector3 | null {
+    const model = this.project.models.find(part => part.id === componentId);
+
+    if (model?.targetPosition?.length === 3) {
+      return new THREE.Vector3(
+        model.targetPosition[0],
+        model.targetPosition[1],
+        model.targetPosition[2]
+      );
+    }
+
     const configuredTarget = this.assemblyTargets[componentId];
     if (configuredTarget) return configuredTarget;
 
-    const index = this.project.models.findIndex(model => model.id === componentId);
+    const index = this.project.models.findIndex(part => part.id === componentId);
     if (index === -1) return null;
 
     return new THREE.Vector3(3, -3 + index * 0.7, 0);
+  }
+
+  private applySavedRotation(object: THREE.Object3D, componentId: string) {
+    const model = this.project.models.find(part => part.id === componentId);
+
+    if (!model?.rotation?.length) {
+      object.rotation.set(0, 0, 0);
+      return;
+    }
+
+    object.rotation.set(
+      model.rotation[0] || 0,
+      model.rotation[1] || 0,
+      model.rotation[2] || 0
+    );
   }
 
   private createAssemblyTargetGhosts() {
@@ -652,8 +795,196 @@ export class ViewerComponent implements AfterViewInit, OnDestroy {
     this.dragControls = undefined as unknown as DragControls;
   }
 
+  private disposeTransformControls() {
+    if (!this.transformControls) return;
+
+    this.transformControls.detach();
+    this.transformControls.dispose();
+    this.transformControls = undefined as unknown as TransformControls;
+  }
+
+  private selectEditorObject(event: MouseEvent) {
+    if (!this.transformControls || !this.stlReady) return;
+
+    const rect = this.canvasRef.nativeElement.getBoundingClientRect();
+
+    this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+    this.raycaster.setFromCamera(this.mouse, this.camera);
+
+    const hits = this.raycaster.intersectObjects(Object.values(this.meshMap), true);
+
+    if (!hits.length) {
+      this.clearSelection();
+      return;
+    }
+
+    const hitObject = hits[0].object;
+    const root = hitObject.userData['partRoot'] || hitObject;
+
+    this.setSelectedObject(root);
+  }
+
+  private setSelectedObject(object: THREE.Object3D) {
+    this.clearSelection();
+    this.selectedObject = object;
+    this.transformControls.attach(object);
+    this.highlightSelectedObject(object);
+  }
+
+  private clearSelection() {
+    if (this.selectedObject) {
+      this.restoreSelectedHighlight(this.selectedObject);
+    }
+
+    this.selectedObject = null;
+    this.selectedOriginalEmissive.clear();
+    this.transformControls?.detach();
+  }
+
+  private highlightSelectedObject(object: THREE.Object3D) {
+    object.traverse(child => {
+      const material = (child as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
+
+      if (!material?.emissive) return;
+
+      this.selectedOriginalEmissive.set(material, material.emissive.getHex());
+      material.emissive.set(0x164e63);
+      material.emissiveIntensity = 0.45;
+    });
+  }
+
+  private restoreSelectedHighlight(object: THREE.Object3D) {
+    object.traverse(child => {
+      const material = (child as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
+      const original = material ? this.selectedOriginalEmissive.get(material) : undefined;
+
+      if (!material?.emissive || original === undefined) return;
+
+      material.emissive.set(original);
+      material.emissiveIntensity = 0;
+    });
+  }
+
+  canRotateAssembly(): boolean {
+    if (!this.project?.models?.length) return false;
+
+    return this.project.models.every(model => this.meshMap[model.id]?.userData['assembled']);
+  }
+
+  private onAssemblyRotatePointerDown(event: PointerEvent) {
+    if (!this.assemblyRotationEnabled || !this.canRotateAssembly()) return;
+
+    this.isRotatingAssembly = true;
+    this.lastRotationPointer = {
+      x: event.clientX,
+      y: event.clientY
+    };
+    this.updateDragControlsEnabled();
+    this.canvasRef.nativeElement.setPointerCapture?.(event.pointerId);
+    event.preventDefault();
+  }
+
+  private onAssemblyRotatePointerMove(event: PointerEvent) {
+    if (!this.isRotatingAssembly || !this.assemblyGroup) return;
+
+    const deltaX = event.clientX - this.lastRotationPointer.x;
+    const deltaY = event.clientY - this.lastRotationPointer.y;
+
+    this.assemblyGroup.rotation.y += deltaX * 0.01;
+    this.assemblyGroup.rotation.x += deltaY * 0.01;
+    this.assemblyGroup.rotation.x = THREE.MathUtils.clamp(
+      this.assemblyGroup.rotation.x,
+      -Math.PI / 2,
+      Math.PI / 2
+    );
+
+    this.lastRotationPointer = {
+      x: event.clientX,
+      y: event.clientY
+    };
+  }
+
+  private onAssemblyRotatePointerUp() {
+    if (!this.isRotatingAssembly) return;
+
+    this.isRotatingAssembly = false;
+    this.updateDragControlsEnabled();
+  }
+
+  private addMeshToAssemblyGroup(mesh: THREE.Object3D) {
+    if (!this.assemblyGroup || mesh.parent === this.assemblyGroup) return;
+
+    this.assemblyGroup.attach(mesh);
+  }
+
+  private removeMeshFromAssemblyGroup(mesh: THREE.Object3D) {
+    if (!this.scene || mesh.parent !== this.assemblyGroup) return;
+
+    this.scene.attach(mesh);
+  }
+
+  private updateDragControlsEnabled() {
+    if (!this.dragControls) return;
+
+    this.dragControls.enabled = !this.assemblyRotationEnabled;
+  }
+
+  getEditedModels() {
+    return this.project.models.map((model, index) => {
+      const object = this.meshMap[model.id];
+
+      if (!object) {
+        return {
+          ...model,
+          order: index
+        };
+      }
+
+      return {
+        ...model,
+        targetPosition: [
+          this.roundTransformValue(object.position.x),
+          this.roundTransformValue(object.position.y),
+          this.roundTransformValue(object.position.z)
+        ],
+        rotation: [
+          this.roundTransformValue(object.rotation.x),
+          this.roundTransformValue(object.rotation.y),
+          this.roundTransformValue(object.rotation.z)
+        ],
+        scale: this.roundTransformValue(object.scale.x),
+        assembled: false,
+        order: index
+      };
+    });
+  }
+
+  applyExplodedView() {
+    if (!this.project?.models?.length) return;
+
+    const spacing = 2.4;
+    const startX = -((this.project.models.length - 1) * spacing) / 2;
+
+    this.project.models.forEach((model, index) => {
+      const object = this.meshMap[model.id];
+
+      if (!object) return;
+
+      object.position.set(startX + index * spacing, 2, 0);
+      object.userData['originalPosition'] = object.position.clone();
+    });
+  }
+
+  private roundTransformValue(value: number): number {
+    return Number(value.toFixed(4));
+  }
+
   private resetScene() {
     this.disposeDragControls();
+    this.disposeTransformControls();
+    this.clearSelection();
     this.clearAssemblyTargetGhosts();
     this.meshMap = {};
     this.slotMap = {};
@@ -677,5 +1008,19 @@ export class ViewerComponent implements AfterViewInit, OnDestroy {
     }
 
     return `/${normalizedFile}`;
+  }
+
+  private getModelFileType(model: any): 'stl' | 'glb' {
+    if (model.fileType === 'glb' || model.fileType === 'stl') {
+      return model.fileType;
+    }
+
+    const fileName = String(model.fileName || model.file || '').toLowerCase();
+
+    if (fileName.includes('.glb') || fileName.includes('model/gltf-binary')) {
+      return 'glb';
+    }
+
+    return 'stl';
   }
 }

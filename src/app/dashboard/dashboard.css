@@ -259,6 +259,21 @@ textarea {
   display: none;
 }
 
+.selected-files {
+  display: grid;
+  gap: 8px;
+  margin: -4px 0 16px;
+}
+
+.selected-files div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(2, 6, 23, 0.28);
+}
+
 .upload-zone span,
 .dialog-error {
   color: rgba(248, 251, 255, 0.64);

@@ -4,8 +4,8 @@
       <div class="eyebrow">Digital assembly training</div>
       <h1>Digital Twin Studio</h1>
       <p>
-        Build premium STL assembly simulations from project JSON, validate part order,
-        and train with interactive 3D placement.
+        Upload STL or GLB parts, generate reusable assembly projects, and train
+        with interactive 3D placement.
       </p>
     </div>
 
@@ -27,7 +27,8 @@
     <div class="projects-grid">
       <article class="project-card" *ngFor="let project of projects">
         <div class="card-top">
-          <div class="project-mark">{{ project.name.charAt(0) }}</div>
+          <div class="project-mark" *ngIf="!project.thumbnail">{{ project.name.charAt(0) }}</div>
+          <img class="project-thumbnail" *ngIf="project.thumbnail" [src]="project.thumbnail" alt="" />
           <div>
             <h3>{{ project.name }}</h3>
             <p>{{ project.description || 'STL assembly simulator' }}</p>
@@ -53,7 +54,7 @@
       <div class="dialog-header">
         <div>
           <span>{{ editingProject ? 'Edit simulation' : 'Create simulation' }}</span>
-          <h2>{{ editingProject ? 'Update project config' : 'Upload project JSON' }}</h2>
+          <h2>{{ editingProject ? 'Update project' : 'Upload model files' }}</h2>
         </div>
         <button class="icon-button" (click)="closeProjectDialog()">x</button>
       </div>
@@ -69,13 +70,33 @@
       </label>
 
       <label class="upload-zone">
-        <input type="file" accept=".json,application/json" (change)="onConfigSelected($event)" />
-        <strong>{{ configFileName || 'Choose stl-project-config.json' }}</strong>
-        <span>JSON should include a models array with file, initialPosition, targetPosition, and scale.</span>
+        <input type="file" accept=".stl,.glb" multiple (change)="onModelsSelected($event)" />
+        <strong>
+          {{
+            selectedModelFiles.length
+              ? selectedModelFiles.length + ' model file(s) selected'
+              : 'Upload STL or GLB files'
+          }}
+        </strong>
+        <span>Parts are registered automatically and placed in upload order.</span>
       </label>
 
-      <label>
-        Config preview
+      <div class="selected-files" *ngIf="selectedModelFiles.length">
+        <div *ngFor="let file of selectedModelFiles; let i = index">
+          <span>Part {{ i + 1 }}</span>
+          <strong>{{ file.name }}</strong>
+        </div>
+      </div>
+
+      <label class="upload-zone optional">
+        <input type="file" accept="image/*" (change)="onThumbnailSelected($event)" />
+        <strong>{{ thumbnailFileName || 'Upload thumbnail image' }}</strong>
+        <span>Optional project image for the library card.</span>
+      </label>
+
+      <label class="json-fallback">
+        JSON fallback
+        <input type="file" accept=".json,application/json" (change)="onConfigSelected($event)" />
         <textarea [(ngModel)]="configText" placeholder="{ &quot;models&quot;: [] }"></textarea>
       </label>
 

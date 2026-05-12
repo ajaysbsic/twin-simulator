@@ -7,7 +7,45 @@
       <p>{{ project.description || 'Interactive STL assembly simulation' }}</p>
     </div>
 
+    <div class="editor-panel" *ngIf="workspaceMode === 'editor'">
+      <div class="panel-label">Assembly Editor</div>
+      <div class="tool-row">
+        <button
+          type="button"
+          [class.active]="editorTransformMode === 'translate'"
+          (click)="setEditorTransformMode('translate')">
+          Move
+        </button>
+        <button
+          type="button"
+          [class.active]="editorTransformMode === 'rotate'"
+          (click)="setEditorTransformMode('rotate')">
+          Rotate
+        </button>
+        <button
+          type="button"
+          [class.active]="editorTransformMode === 'scale'"
+          (click)="setEditorTransformMode('scale')">
+          Scale
+        </button>
+      </div>
+
+      <div class="order-list">
+        <div *ngFor="let part of project.models; let i = index">
+          <span>{{ i + 1 }}</span>
+          <strong>{{ part.name || part.id }}</strong>
+          <button type="button" [disabled]="i === 0" (click)="movePartOrder(i, -1)">Up</button>
+          <button type="button" [disabled]="i === project.models.length - 1" (click)="movePartOrder(i, 1)">Down</button>
+        </div>
+      </div>
+
+      <button type="button" class="panel-action" (click)="generateExplodedView()">Exploded View</button>
+      <button type="button" class="panel-action primary" (click)="saveAssembly()">Save Assembly</button>
+      <p class="save-status" *ngIf="saveStatus">{{ saveStatus }}</p>
+    </div>
+
     <app-home
+      *ngIf="workspaceMode === 'simulation'"
       [project]="project"
       (stepExecuted)="onStep($event)">
     </app-home>
@@ -17,10 +55,30 @@
     <div class="viewer-topbar">
       <div>
         <span>3D Assembly Workspace</span>
-        <strong>{{ project.models.length }} parts loaded</strong>
+        <strong>{{ workspaceMode === 'editor' ? 'Editor Mode' : project.models.length + ' parts loaded' }}</strong>
       </div>
 
-      <div class="mode-tabs" role="tablist" aria-label="Assembly mode">
+      <div class="mode-tabs" role="tablist" aria-label="Workspace mode">
+        <button
+          type="button"
+          role="tab"
+          [class.active]="workspaceMode === 'simulation'"
+          [attr.aria-selected]="workspaceMode === 'simulation'"
+          (click)="setWorkspaceMode('simulation')">
+          Simulation
+        </button>
+
+        <button
+          type="button"
+          role="tab"
+          [class.active]="workspaceMode === 'editor'"
+          [attr.aria-selected]="workspaceMode === 'editor'"
+          (click)="setWorkspaceMode('editor')">
+          Editor
+        </button>
+      </div>
+
+      <div class="mode-tabs" *ngIf="workspaceMode === 'simulation'" role="tablist" aria-label="Assembly mode">
         <button
           type="button"
           role="tab"
@@ -43,16 +101,29 @@
       <button
         type="button"
         class="undo-button"
-        [class.visible]="activeViewerMode === 'drag-drop'"
+        [class.visible]="workspaceMode === 'simulation' && activeViewerMode === 'drag-drop'"
         [disabled]="!canUndoDragDrop"
         (click)="undoLastAssembly()">
         Undo
+      </button>
+
+      <button
+        type="button"
+        class="rotate-button"
+        *ngIf="workspaceMode === 'simulation'"
+        [class.active]="assemblyRotationEnabled"
+        [disabled]="!canRotateAssembly"
+        (click)="toggleAssemblyRotation()">
+        Rotate Assembly
       </button>
     </div>
 
     <app-viewer
       [project]="project"
+      [workspaceMode]="workspaceMode"
       [interactionMode]="activeViewerMode"
+      [editorTransformMode]="editorTransformMode"
+      [assemblyRotationEnabled]="assemblyRotationEnabled"
       (meshClicked)="onMeshClick($event)"
       (componentAssembled)="onComponentAssembled($event)"
       (componentDisassembled)="onComponentDisassembled($event)">

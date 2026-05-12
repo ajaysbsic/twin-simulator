@@ -6,12 +6,17 @@ export interface ProjectModel {
 
   description?: string;
 
+  thumbnail?: string;
+
   models: ProjectFileModel[];
 }
 
 export interface ProjectFileModel {
   id: string;
+  name?: string;
   file: string;
+  fileName?: string;
+  fileType?: 'stl' | 'glb';
 
   initialPosition?: number[];
   targetPosition?: number[];
@@ -19,4 +24,6 @@ export interface ProjectFileModel {
   rotation?: number[];
 
   scale?: number;
+  assembled?: boolean;
+  order?: number;
 }

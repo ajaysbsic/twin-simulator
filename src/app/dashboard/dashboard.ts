@@ -20,6 +20,9 @@ export class DashboardComponent {
   projectDescription = '';
   configText = '';
   configFileName = '';
+  selectedModelFiles: File[] = [];
+  thumbnailDataUrl = '';
+  thumbnailFileName = '';
   editingProject: ProjectModel | null = null;
   showProjectDialog = false;
   dialogError = '';
@@ -70,6 +73,9 @@ export class DashboardComponent {
     this.projectDescription = '';
     this.configText = '';
     this.configFileName = '';
+    this.selectedModelFiles = [];
+    this.thumbnailDataUrl = '';
+    this.thumbnailFileName = '';
     this.dialogError = '';
     this.showProjectDialog = true;
   }
@@ -80,6 +86,9 @@ export class DashboardComponent {
     this.projectDescription = project.description || '';
     this.configText = JSON.stringify({ models: project.models }, null, 2);
     this.configFileName = 'Current project config';
+    this.selectedModelFiles = [];
+    this.thumbnailDataUrl = project.thumbnail || '';
+    this.thumbnailFileName = project.thumbnail ? 'Current thumbnail' : '';
     this.dialogError = '';
     this.showProjectDialog = true;
   }
@@ -105,18 +114,45 @@ export class DashboardComponent {
     reader.readAsText(file);
   }
 
-  saveProjectFromDialog() {
+  onModelsSelected(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const files = Array.from(input.files || []);
+
+    this.selectedModelFiles = files.filter(file => this.isSupportedModelFile(file));
+    this.dialogError = '';
+
+    if (files.length && this.selectedModelFiles.length !== files.length) {
+      this.dialogError = 'Only STL and GLB files are supported in Phase 2.';
+    }
+  }
+
+  onThumbnailSelected(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+
+    if (!file) return;
+
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      this.thumbnailDataUrl = String(reader.result || '');
+      this.thumbnailFileName = file.name;
+    };
+
+    reader.readAsDataURL(file);
+  }
+
+  async saveProjectFromDialog() {
     if (!this.projectName.trim()) {
       this.dialogError = 'Project name is required.';
       return;
     }
 
     try {
-      const parsed = JSON.parse(this.configText || '{}');
-      const models = parsed.models;
+      const models = await this.buildProjectModels();
 
       if (!Array.isArray(models) || models.length === 0) {
-        this.dialogError = 'Config JSON must include a non-empty models array.';
+        this.dialogError = 'Upload at least one STL or GLB file.';
         return;
       }
 
@@ -124,6 +160,7 @@ export class DashboardComponent {
         id: this.editingProject?.id || Date.now().toString(),
         name: this.projectName.trim(),
         description: this.projectDescription.trim(),
+        thumbnail: this.thumbnailDataUrl,
         models
       };
 
@@ -135,8 +172,9 @@ export class DashboardComponent {
 
       this.closeProjectDialog();
       this.loadProjects();
-    } catch {
-      this.dialogError = 'Config JSON is not valid.';
+    } catch (error) {
+      this.dialogError =
+        error instanceof Error ? error.message : 'Unable to save uploaded model files.';
     }
   }
 
@@ -171,5 +209,93 @@ export class DashboardComponent {
       description: 'Classic hardcoded cube sequence with base, motor, and cover',
       models: []
     };
+  }
+
+  private async buildProjectModels(): Promise<ProjectFileModel[]> {
+    if (this.selectedModelFiles.length) {
+      const files = [...this.selectedModelFiles].sort((a, b) =>
+        a.name.localeCompare(b.name, undefined, { numeric: true })
+      );
+      const spacing = 2.2;
+      const startX = -((files.length - 1) * spacing) / 2;
+
+      return Promise.all(
+        files.map(async (file, index) => {
+          const fileType = this.getModelFileType(file.name);
+
+          if (!fileType) {
+            throw new Error('Only STL and GLB files are supported in Phase 2.');
+          }
+
+          return {
+            id: `part-${index + 1}`,
+            name: this.getPartName(file.name),
+            file: await this.readFileAsDataUrl(file),
+            fileName: file.name,
+            fileType,
+            initialPosition: [startX + index * spacing, 2, 0],
+            targetPosition: [0, -2 + index * 0.7, 0],
+            rotation: fileType === 'stl' ? [-Math.PI / 2, 0, 0] : [0, 0, 0],
+            scale: fileType === 'glb' ? 1 : 0.006,
+            assembled: false,
+            order: index
+          };
+        })
+      );
+    }
+
+    if (this.editingProject && !this.configText.trim()) {
+      return this.editingProject.models;
+    }
+
+    if (this.configText.trim()) {
+      const parsed = JSON.parse(this.configText);
+      const models = parsed.models;
+
+      if (!Array.isArray(models)) {
+        throw new Error('Config JSON must include a models array.');
+      }
+
+      return models.map((model: ProjectFileModel, index: number) => ({
+        ...model,
+        id: model.id || `part-${index + 1}`,
+        name: model.name || model.id || `Part ${index + 1}`,
+        fileType: model.fileType || this.getModelFileType(model.file) || 'stl',
+        assembled: false,
+        order: model.order ?? index
+      }));
+    }
+
+    return [];
+  }
+
+  private readFileAsDataUrl(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = () => reject(new Error(`Unable to read ${file.name}.`));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  private isSupportedModelFile(file: File): boolean {
+    return !!this.getModelFileType(file.name);
+  }
+
+  private getModelFileType(fileName: string): 'stl' | 'glb' | null {
+    const lowerName = fileName.toLowerCase();
+
+    if (lowerName.endsWith('.stl')) return 'stl';
+    if (lowerName.endsWith('.glb')) return 'glb';
+
+    return null;
+  }
+
+  private getPartName(fileName: string): string {
+    return fileName
+      .replace(/\.[^/.]+$/, '')
+      .replace(/[-_]+/g, ' ')
+      .replace(/\b\w/g, char => char.toUpperCase());
   }
 }

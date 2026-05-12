@@ -48,6 +48,66 @@
   line-height: 1.55;
 }
 
+.editor-panel {
+  margin-bottom: 24px;
+  padding: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  background: rgba(2, 6, 23, 0.32);
+}
+
+.panel-label {
+  margin-bottom: 12px;
+  color: #67e8f9;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.tool-row,
+.order-list div {
+  display: flex;
+  gap: 8px;
+}
+
+.tool-row button,
+.order-list button,
+.panel-action {
+  border: 0;
+  border-radius: 8px;
+  padding: 9px 12px;
+  color: #f8fbff;
+  background: rgba(255, 255, 255, 0.1);
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.tool-row button.active,
+.panel-action.primary {
+  color: #04111d;
+  background: #67e8f9;
+}
+
+.order-list {
+  display: grid;
+  gap: 8px;
+  margin: 14px 0;
+}
+
+.order-list div {
+  align-items: center;
+}
+
+.order-list strong {
+  flex: 1;
+}
+
+.save-status {
+  margin: 12px 0 0;
+  color: rgba(248, 251, 255, 0.72);
+}
+
 .viewer-area {
   flex: 1;
   position: relative;
@@ -109,7 +169,8 @@
   background: #67e8f9;
 }
 
-.undo-button {
+.undo-button,
+.rotate-button {
   display: none;
   align-self: flex-start;
   min-width: 84px;
@@ -124,13 +185,26 @@
   backdrop-filter: blur(18px);
 }
 
+.rotate-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 142px;
+}
+
 .undo-button.visible {
   display: inline-flex;
   align-items: center;
   justify-content: center;
 }
 
-.undo-button:disabled {
+.rotate-button.active {
+  color: #04111d;
+  background: #a7f3d0;
+}
+
+.undo-button:disabled,
+.rotate-button:disabled {
   color: rgba(248, 251, 255, 0.38);
   cursor: not-allowed;
   opacity: 0.58;
